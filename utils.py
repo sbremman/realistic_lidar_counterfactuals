@@ -4,16 +4,25 @@ from shapely.geometry import Point, LineString, MultiPolygon
 from shapely.ops import unary_union
 import torch.nn as nn
 import torch
+from joblib import Parallel, delayed
+from numba import jit
+from rtree import index
+import time
+from shapely.geometry import Point, box
+from shapely.affinity import rotate, translate
+from shapely.geometry import MultiPolygon
 
+GENE_LENGTH = 6
+
+# Example neural network model (for future reference)
 class ExampleModel(nn.Module):
-    def __init__(self):
+    def __init__(self, input_dim=180, output_dim=1):
         super(ExampleModel, self).__init__()
-        self.fc1 = nn.Linear(180, 100)
+        self.fc1 = nn.Linear(input_dim, 100)
         self.fc2 = nn.Linear(100, 50)
         self.fc3 = nn.Linear(50, 10)
-        self.fc4 = nn.Linear(10, 2)
+        self.fc4 = nn.Linear(10, output_dim)
 
-        # Initialize weights with a wider distribution
         nn.init.xavier_uniform_(self.fc1.weight)
         nn.init.xavier_uniform_(self.fc2.weight)
         nn.init.xavier_uniform_(self.fc3.weight)
@@ -26,94 +35,160 @@ class ExampleModel(nn.Module):
         x = torch.tanh(self.fc4(x))  # Use tanh to allow wider range of output values
         return x
 
+# Original LiDAR calculation function
 def calculate_lidar_readings(multipolygon: MultiPolygon, origin: tuple, num_rays: int = 180, max_distance: float = 3.5, debug: bool = False):
-    """
-    Calculate LiDAR-like readings from a given origin point and a Shapely MultiPolygon.
-
-    Parameters:
-    - multipolygon (MultiPolygon): A Shapely MultiPolygon object representing obstacles.
-    - origin (tuple): The origin point (x, y) from which the LiDAR rays are cast.
-    - num_rays (int): Number of rays to cast in different directions (default is 360).
-    - max_distance (float): Maximum distance for each ray (default is 1000 units).
-    - debug (bool): If True, print debug information (default is False).
-
-    Returns:
-    - list: A list of distances representing the LiDAR readings for each ray direction.
-    """
-    # Ensure the MultiPolygon is valid by taking the unary union to merge geometries
     multipolygon = unary_union(multipolygon)
-    # Simplify the geometry slightly to avoid complex intersections
     multipolygon = multipolygon.simplify(0.001, preserve_topology=True)
 
-    # Create a Point object for the origin
     origin_point = Point(origin)
-    # Generate evenly spaced angles between 0 and 2*pi for the number of rays specified
     angles = np.linspace(np.pi / 2, 2 * np.pi + np.pi / 2, num_rays, endpoint=False)
-    # Initialize an empty list to store LiDAR readings
     lidar_readings = []
 
-    # Iterate over each angle to cast a ray
     for angle in angles:
-        # Calculate the direction vector for the ray using cosine and sine of the angle
         dx = np.cos(angle)
         dy = np.sin(angle)
-        # Create a ray (a line) extending from the origin in the given direction
-        # The ray extends 'max_distance' units from the origin
         ray = LineString([origin_point, (origin_point.x + max_distance * dx, origin_point.y + max_distance * dy)])
-
-        # Calculate the intersection points between the ray and the MultiPolygon
         intersection = multipolygon.intersection(ray)
 
         if intersection.is_empty:
-            # If there's no intersection, append the max distance
             lidar_readings.append(max_distance)
             if debug:
                 print(f"Ray at angle {np.degrees(angle):.2f}°: No intersection, distance = {max_distance}")
         else:
-            # If there is an intersection, find the nearest intersection point
             if intersection.geom_type == 'Point':
-                # If the intersection is a single point, calculate the distance from the origin
                 distance = origin_point.distance(intersection)
             elif intersection.geom_type in ['MultiPoint', 'GeometryCollection']:
-                # If there are multiple intersection points, take the minimum distance from the origin
                 distance = min(origin_point.distance(pt) for pt in intersection.geoms if pt.geom_type == 'Point')
             else:
-                # For other geometries (e.g., LineString or Polygon), calculate the distance to the closest point
                 distance = origin_point.distance(intersection)
 
-            # Append the calculated distance to the list of LiDAR readings
             lidar_readings.append(distance)
             if debug:
                 print(f"Ray at angle {np.degrees(angle):.2f}°: Intersection, distance = {distance:.2f}")
 
-    # Return the list of distances representing the LiDAR readings
     return lidar_readings
 
 
-def plot_lidar_readings(lidar_readings, origin=(0, 0)):
-    """
-    Plot the LiDAR readings on a polar plot.
 
-    Parameters:
-    - lidar_readings (list): A list of distances representing the LiDAR readings for each ray direction.
-    - origin (tuple): The origin point (x, y) from which the LiDAR rays are cast.
-    """
+# Plotting function
+def plot_lidar_readings(lidar_readings, origin=(0, 0), lidar_dim=180):
     angles = np.linspace(np.pi / 2, 2 * np.pi + np.pi / 2, len(lidar_readings), endpoint=False)
 
-    # Create a polar plot
-    plt.figure(figsize=(8, 8))
-    ax = plt.subplot(111, polar=True)
-    ax.plot(angles, lidar_readings, linestyle='-', marker='o')
+    fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(1)
+    ax.scatter(angles, lidar_readings, marker='o', label='LIDAR Readings')
     ax.set_title("LiDAR Readings from Origin ({}, {})".format(origin[0], origin[1]))
     plt.show()
 
+def plot_lidar_state(state, origin=(0, 0), lidar_dim=180, title='None'):
+    lidar_readings = state[:lidar_dim]
+    angle_to_goal = state[-2]
+    distance_to_goal = state[-1]
+    angles = np.linspace(np.pi / 2, 2 * np.pi + np.pi / 2, len(lidar_readings), endpoint=False)
 
-# Example usage:
-# Create a MultiPolygon object with two buffered points representing obstacles
-multipolygon = MultiPolygon([Point(1.0, 1.0).buffer(0.5), Point(-1, -1).buffer(0.75), Point(-1, 1).buffer(0.25).envelope])
-# Define the origin point from which the LiDAR rays will be cast
-origin = (0, 0)
-# Calculate LiDAR readings from the origin
-lidar_readings = calculate_lidar_readings(multipolygon, origin, debug=True)
-# Plot the LiDAR readings
-plot_lidar_readings(lidar_readings, origin)
+    fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(1)
+    ax.scatter(angles, lidar_readings, marker='o', label='LIDAR Readings')
+    ax.plot(angle_to_goal, distance_to_goal, 'ro', label='Goal')
+    ax.set_title(title)
+    plt.show()
+
+# Shape Conversion Functions
+def gene_to_rectangle(gene):
+    """
+    Converts a gene to a Shapely Rectangle (Polygon) object.
+    """
+    _, half_x, half_y, pos_x, pos_y, angle = gene
+    rect = box(-half_x, -half_y, half_x, half_y)
+    rect = rotate(rect, np.degrees(angle), origin=(0, 0), use_radians=False)
+    rect = translate(rect, xoff=pos_x, yoff=pos_y)
+    return rect
+
+
+def gene_to_circle(gene):
+    """
+    Converts a gene to a Shapely Circle (Polygon) object.
+    """
+    _, radius, _, pos_x, pos_y, _ = gene
+    circle = Point(pos_x, pos_y).buffer(radius)
+    return circle
+
+
+def gene_to_shape(gene):
+    """
+    Converts a gene to the corresponding Shapely shape.
+    """
+    shape_type = 1 if gene[0] < 1.5 else 2
+    gene[0] = shape_type
+    if shape_type == 1:
+        gene[2] = gene[2]  # half_y for rectangle
+        gene[5] = gene[5]  # angle
+    else:
+        gene[2] = 0.0  # half_y ignored for circle
+        gene[5] = 0.0  # angle ignored for circle
+    return gene_to_rectangle(gene) if shape_type == 1 else gene_to_circle(gene)
+
+
+def genes_to_multipolygon(genes):
+    shape_list = []
+
+    # Loop through genes, ensuring we take gene_length chunks
+    for i in range(0, len(genes), GENE_LENGTH):
+        gene = genes[i:i + GENE_LENGTH]  # Segment the gene list
+        if len(gene) == GENE_LENGTH:  # Ensure it's a full gene
+            gene_shape = gene_to_shape(gene)
+            shape_list.append(gene_shape)
+
+    return MultiPolygon(shape_list)
+
+def plot_shapes(shapes):
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    def plot_shape(shape, color, label):
+        """Plot a shape, which could be a Polygon or MultiPolygon."""
+        if shape.geom_type == 'Polygon':
+            x, y = shape.exterior.xy
+            ax.fill(x, y, alpha=0.5, fc=color, ec='black', label=label)
+        elif shape.geom_type == 'MultiPolygon':
+            for poly in shape.geoms:  # Use shape.geoms to iterate over MultiPolygon
+                x, y = poly.exterior.xy
+                ax.fill(x, y, alpha=0.5, fc=color, ec='black', label=label)
+
+    # Plot target shape
+    plot_shape(shapes, 'blue', 'Shape')
+
+
+    ax.set_xlabel('X-axis')
+    ax.set_ylabel('Y-axis')
+    ax.legend()
+    ax.set_aspect('equal', 'box')
+    ax.grid(True)
+    plt.show()
+
+
+if __name__ == "__main__":
+    # Create a MultiPolygon with 10 obstacles in a polar manner
+    obstacles = []
+    for _ in range(100):
+        angle = np.random.uniform(0, 2 * np.pi)
+        distance = np.random.uniform(1.0, 3.5)
+        x = distance * np.cos(angle)
+        y = distance * np.sin(angle)
+        obstacles.append(Point(x, y).buffer(np.random.uniform(0.1, 0.3)))
+
+    multipolygon = MultiPolygon(obstacles)
+    origin = (0, 0)
+    num_rays = 180
+
+    # Measure performance for each implementation
+    lidar_time = time.time()
+    lidar_readings = calculate_lidar_readings(multipolygon, origin, debug=False, num_rays=num_rays)
+    end_lidar_time = time.time()
+
+    # Plot the LiDAR readings
+    plot_lidar_readings(lidar_readings, origin)
+
+    print("Lidar time: ", end_lidar_time - lidar_time)

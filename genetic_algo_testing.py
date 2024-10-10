@@ -1,3 +1,5 @@
+import time
+
 import pygad
 import numpy as np
 from shapely.geometry import Point, box
@@ -5,54 +7,8 @@ from shapely.affinity import rotate, translate
 import matplotlib.pyplot as plt
 from shapely.geometry import MultiPolygon
 
+from utils import genes_to_multipolygon
 
-# Shape Conversion Functions
-def gene_to_rectangle(gene):
-    """
-    Converts a gene to a Shapely Rectangle (Polygon) object.
-    """
-    _, half_x, half_y, pos_x, pos_y, angle = gene
-    rect = box(-half_x, -half_y, half_x, half_y)
-    rect = rotate(rect, np.degrees(angle), origin=(0, 0), use_radians=False)
-    rect = translate(rect, xoff=pos_x, yoff=pos_y)
-    return rect
-
-
-def gene_to_circle(gene):
-    """
-    Converts a gene to a Shapely Circle (Polygon) object.
-    """
-    _, radius, _, pos_x, pos_y, _ = gene
-    circle = Point(pos_x, pos_y).buffer(radius)
-    return circle
-
-
-def gene_to_shape(gene):
-    """
-    Converts a gene to the corresponding Shapely shape.
-    """
-    shape_type = 1 if gene[0] < 1.5 else 2
-    gene[0] = shape_type
-    if shape_type == 1:
-        gene[2] = gene[2]  # half_y for rectangle
-        gene[5] = gene[5]  # angle
-    else:
-        gene[2] = 0.0  # half_y ignored for circle
-        gene[5] = 0.0  # angle ignored for circle
-    return gene_to_rectangle(gene) if shape_type == 1 else gene_to_circle(gene)
-
-
-def genes_to_multipolygon(genes):
-    shape_list = []
-
-    # Loop through genes, ensuring we take gene_length chunks
-    for i in range(0, len(genes), gene_length):
-        gene = genes[i:i + gene_length]  # Segment the gene list
-        if len(gene) == gene_length:  # Ensure it's a full gene
-            gene_shape = gene_to_shape(gene)
-            shape_list.append(gene_shape)
-
-    return MultiPolygon(shape_list)
 
 
 # Fitness Function
@@ -63,12 +19,22 @@ def calculate_overlapping_area(shape1, shape2):
     intersection = shape1.intersection(shape2)
     return intersection.area
 
+def decode_gene(genes):
+
+    new_genes = gene_A+gene_B*genes
+
+    """for i in range(0, len(genes), gene_length):
+        genes[i:i + gene_length] = gene_A + gene_B*genes[i:i + gene_length]  # Segment the gene list"""
+
+    return new_genes
+
 
 def fitness_func(ga_instance, solution, solution_idx):
     """
     Fitness function for PyGAD. Calculates the IoU between the target shape and the evolved shape.
     """
     gene = solution.copy()
+    gene = decode_gene(gene)
 
     # Convert genes to MultiPolygon
     try:
@@ -90,10 +56,12 @@ def fitness_func(ga_instance, solution, solution_idx):
     # Calculate IoU
     iou = intersection_area / union_area
 
+
     return iou
 
 
 def plot_shapes(target, evolved):
+
     fig, ax = plt.subplots(figsize=(8, 8))
 
     def plot_shape(shape, color, label):
@@ -125,82 +93,103 @@ def plot_shapes(target, evolved):
     ax.grid(True)
     plt.show()
 
+ if __name__ == "__main__":
 
-# Define the target shape gene and shape
-# Example: Rectangle with half-width=3, half-height=2, positioned at (5,5), rotated by 30 degrees
+    # Define the target shape gene and shape
+    # Example: Rectangle with half-width=3, half-height=2, positioned at (5,5), rotated by 30 degrees
 
-target_gene_1 = [1, 3.0, 2.0, 5.0, 5.0, np.radians(30)]
-gene_length = len(target_gene_1)
-target_gene_2 = [2, 2.3, 2.0, 1.0, -2.0, np.radians(30)]
-target_gene_3 = [2, 3.3, -3.0, -3.0, 3.0, np.radians(30)]
+    target_gene_1 = [1, 3.0, 2.0, 5.0, 5.0, np.radians(30)]
+    gene_length = len(target_gene_1)
+    target_gene_2 = [2, 2.3, 2.0, 1.0, -2.0, np.radians(30)]
+    target_gene_3 = [2, 3.3, 3.0, -3.0, 3.0, np.radians(30)]
+    target_gene_4 = [1, 1.0, 2.5, -6.0, -6.0, np.radians(1.0)]
 
-genes = [target_gene_1, target_gene_2]#, target_gene_2, target_gene_3]
+    genes = [target_gene_1, target_gene_2, target_gene_3, target_gene_4]
 
-target_genes = []
-for gene in genes:
-    target_genes.extend(gene)
-target_shape = genes_to_multipolygon(target_genes)
+    target_genes = []
+    for gene in genes:
+        target_genes.extend(gene)
+    target_shape = genes_to_multipolygon(target_genes)
 
-"""test_gene = [1, 2.0, 2.0, 5.0, 5.0, np.radians(60)]
-test_shape = gene_to_shape(test_gene)
+    """test_gene = [1, 2.0, 2.0, 5.0, 5.0, np.radians(60)]
+    test_shape = gene_to_shape(test_gene)
+    
+    print(fitness_func(None, test_gene, 0))
+    
+    plot_shapes(target_shape, test_shape)
+    exit()"""
 
-print(fitness_func(None, test_gene, 0))
+    # Define gene space
+    """gene_space = [
+        {'low': 1, 'high': 2},  # Shape type: 1 or 2
+        {'low': 1.0, 'high': 10.0},  # Half extents x
+        {'low': 1.0, 'high': 10.0},  # Half extents y
+        {'low': -10.0, 'high': 10.0},  # Position x
+        {'low': -10.0, 'high': 10.0},  # Position y
+        {'low': 0.0, 'high': 2 * np.pi}  # Angle in radians
+    ]*(len(genes))
+    
+    import math
+    gene_A = np.array([0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    gene_B = np.array([1, 1.0, 1.0, 1.0, 1.0, 1.0])"""
 
-plot_shapes(target_shape, test_shape)
-exit()"""
+    gene_space = [
+        {'low': 0, 'high': 1},  # Shape type: 1 or 2
+        {'low': 0.0, 'high': 1.0},  # Half extents x 1 + gene*9
+        {'low': 0.0, 'high': 1.0},  # Half extents y 1 + gene*9
+        {'low': 0.0, 'high': 1.0},  # Position x -10 + gene*20
+        {'low': 0.0, 'high': 1.0},  # Position y -10 + gene*20
+        {'low': 0.0, 'high': 1.0}  # Angle in radians 0.0 + gene*2*pi
+    ]*(len(genes))
 
-# Define gene space
-gene_space = [
-    {'low': 1, 'high': 2},  # Shape type: 1 or 2
-    {'low': 1.0, 'high': 10.0},  # Half extents x
-    {'low': 1.0, 'high': 10.0},  # Half extents y
-    {'low': -20.0, 'high': 20.0},  # Position x
-    {'low': -20.0, 'high': 20.0},  # Position y
-    {'low': 0.0, 'high': 2 * np.pi}  # Angle in radians
-]*(len(genes))
-
-
-
-# Initialize GA instance
-ga_instance = pygad.GA(
-    num_generations=100,  # Increase number of generations
-    num_parents_mating=10,  # More parents mating
-    fitness_func=fitness_func,  # Fitness function
-    sol_per_pop=100,  # Larger population size
-    num_genes=len(gene_space),  # Number of genes
-    gene_space=gene_space,  # Gene space
-    parent_selection_type="tournament",  # Tournament selection for better diversity
-    keep_parents=10,  # Keep top 10 parents
-    crossover_type="uniform",  # Uniform crossover for better exploration
-    mutation_type="random",  # Keep random mutation
-    mutation_percent_genes=5,  # Lower mutation rate to 8%
-    stop_criteria=["saturate_50"]  # Stop if no improvement in 50 generations
-)
-
-# Run GA
-ga_instance.run()
-
-# Fetch the best solution
-solution, solution_fitness, solution_idx = ga_instance.best_solution()
-print("Best Solution Gene:", solution)
-print("Best Fitness (IoU):", solution_fitness)
-
-# Decode and convert to shape
-best_gene = solution.copy()
-shape_type = 1 if best_gene[0] < 1.5 else 2
-best_gene[0] = shape_type
-if shape_type == 1:
-    best_gene[2] = best_gene[2]  # half_y for rectangle
-    best_gene[5] = best_gene[5]  # angle
-else:
-    best_gene[2] = 0.0  # half_y ignored for circle
-    best_gene[5] = 0.0  # angle ignored for circle
-best_shape = genes_to_multipolygon(best_gene)
+    import math
+    gene_A = np.array([1.0, 1.0, 1.0, -10.0, -10.0, 0.0]*len(genes))
+    gene_B = np.array([1.0, 9.0, 9.0, 20.0, 20.0, 2*math.pi]*len(genes))
 
 
-# Visualization
 
-ga_instance.plot_fitness()
+    # Initialize GA instance
+    ga_instance = pygad.GA(
+        num_generations=100,  # Increase number of generations
+        num_parents_mating=10,  # More parents mating
+        fitness_func=fitness_func,  # Fitness function
+        sol_per_pop=100,  # Larger population size
+        num_genes=len(gene_space),  # Number of genes
+        gene_space=gene_space,  # Gene space
+        parent_selection_type="rws",  # Tournament selection for better diversity
+        keep_parents=10,  # Keep top 10 parents
+        crossover_type="uniform",  # Uniform crossover for better exploration
+        mutation_type="random",  # Keep random mutation
+        mutation_percent_genes=8,  # Lower mutation rate to 8%
+        stop_criteria=["saturate_50"]  # Stop if no improvement in 50 generations
+    )
+
+    # Run GA
+    ga_instance.run()
+
+    # Fetch the best solution
+    solution, solution_fitness, solution_idx = ga_instance.best_solution()
+    print("Best Solution Gene:", solution)
+    print("Best Fitness (IoU):", solution_fitness)
+
+    # Decode and convert to shape
+    best_gene = solution.copy()
+    best_gene = decode_gene(best_gene)
+
+    shape_type = 1 if best_gene[0] < 1.5 else 2
+    best_gene[0] = shape_type
+    if shape_type == 1:
+        best_gene[2] = best_gene[2]  # half_y for rectangle
+        best_gene[5] = best_gene[5]  # angle
+    else:
+        best_gene[2] = 0.0  # half_y ignored for circle
+        best_gene[5] = 0.0  # angle ignored for circle
+    best_shape = genes_to_multipolygon(best_gene)
 
 
-plot_shapes(target_shape, best_shape)
+    # Visualization
+
+    ga_instance.plot_fitness()
+
+
+    plot_shapes(target_shape, best_shape)
