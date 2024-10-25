@@ -36,7 +36,7 @@ class ExampleModel(nn.Module):
         return x
 
 # Original LiDAR calculation function
-def calculate_lidar_readings(multipolygon: MultiPolygon, origin: tuple, num_rays: int = 180, max_distance: float = 3.5, debug: bool = False):
+def calculate_lidar_readings(multipolygon: MultiPolygon, origin: tuple, num_rays: int = 180, max_distance: float = 1.0, debug: bool = False):
     multipolygon = unary_union(multipolygon)
     multipolygon = multipolygon.simplify(0.001, preserve_topology=True)
 
@@ -95,6 +95,63 @@ def plot_lidar_state(state, origin=(0, 0), lidar_dim=180, title='None'):
     ax.set_title(title)
     plt.show()
 
+def plot_lidar_state_cos_sin(state, origin=(0, 0), lidar_dim=180, title='None', max_range=3.5):
+    lidar_readings = state[:lidar_dim]
+    cos_angle_to_goal = state[-3]
+    sin_angle_to_goal = state[-2]
+
+    assert cos_angle_to_goal <= 1.0
+    assert cos_angle_to_goal >= 0.0
+
+    # Reverse the scaling
+    sin_angle = 2 * sin_angle_to_goal - 1
+    cos_angle = 2 * cos_angle_to_goal - 1
+
+    # Calculate the angle in radians using atan2
+    angle_to_goal = np.arctan2(sin_angle, cos_angle)
+
+    distance_to_goal = state[-1]
+    angles = np.linspace(np.pi / 2, 2 * np.pi + np.pi / 2, len(lidar_readings), endpoint=False)
+
+    fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(1)
+    ax.scatter(angles, lidar_readings, marker='o', label='LIDAR Readings')
+    ax.plot(angle_to_goal, distance_to_goal, 'ro', label='Goal')
+    ax.set_title(title)
+    #ax.set_ylim([0.0, max_range+0.1])
+    plt.show()
+
+
+def plot_lidar_state_cos_sin_unnormalize(state, origin=(0, 0), lidar_dim=180, title='None', max_range=3.5):
+    state = unnormalize_state(state, num_lidar=180)
+
+    lidar_readings = state[:lidar_dim]
+    cos_angle = state[-3]
+    sin_angle = state[-2]
+
+    assert cos_angle <= 1.0
+    assert cos_angle >= 0.0
+
+    # Reverse the scaling
+    #sin_angle = 2 * sin_angle_to_goal - 1
+    #cos_angle = 2 * cos_angle_to_goal - 1
+
+    # Calculate the angle in radians using atan2
+    angle_to_goal = np.arctan2(sin_angle, cos_angle)# + np.pi/2
+
+    distance_to_goal = state[-1]
+    angles = np.linspace(0, 2 * np.pi, len(lidar_readings), endpoint=False)
+
+    fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(1)
+    ax.scatter(angles, lidar_readings, marker='o', label='LIDAR Readings')
+    ax.plot(angle_to_goal, distance_to_goal, 'ro', label='Goal')
+    ax.set_title(title)
+    #ax.set_ylim([0.0, max_range+0.1])
+    plt.show()
+
 # Shape Conversion Functions
 def gene_to_rectangle(gene):
     """
@@ -143,6 +200,18 @@ def genes_to_multipolygon(genes):
 
     return MultiPolygon(shape_list)
 
+def genes_to_multipolygon_polar(genes):
+    shape_list = []
+
+    # Loop through genes, ensuring we take gene_length chunks
+    for i in range(0, len(genes), GENE_LENGTH):
+        gene = genes[i:i + GENE_LENGTH]  # Segment the gene list
+        if len(gene) == GENE_LENGTH:  # Ensure it's a full gene
+            gene_shape = gene_to_shape(gene)
+            shape_list.append(gene_shape)
+
+    return MultiPolygon(shape_list)
+
 def plot_shapes(shapes):
 
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -169,7 +238,109 @@ def plot_shapes(shapes):
     plt.show()
 
 
+def add_column_sin_cos(df):
+    # Get the 181st 'state' column ('state_181' which is at index 186 in your list)
+    column_181 = df['state_181']
+
+    # Calculate sine and cosine
+    sin_values = (np.sin(column_181)+1.0)/2.0
+    cos_values = (np.cos(column_181)+1.0)/2.0
+
+    # Add the sin and cos values as new columns, before reordering
+    df['state_181_cos'] = cos_values
+    df['state_181_sin'] = sin_values
+
+    # Create a new column order based on your instructions
+    new_column_order = ['Episode', 'TimeStep', 'Reward', 'Terminated', 'action_1', 'action_2'] + \
+                       [f'state_{i}' for i in range(1, 181)] + \
+                       ['state_181_cos', 'state_181_sin', 'state_182']
+
+    # Ensure all expected columns exist before reordering
+    missing_cols = set(new_column_order) - set(df.columns)
+    if missing_cols:
+        raise KeyError(f"The following columns are missing and cannot be reordered: {missing_cols}")
+
+    # Reorder the dataframe according to the new order
+    df = df[new_column_order]
+
+    # Rename all state columns to follow the pattern state_1 -> state_183
+    for i in range(1, 184):
+        current_col_name = df.columns[6 + i - 1]  # Start at the 7th column (after Episode, TimeStep, etc.)
+        df.rename(columns={current_col_name: f'state_{i}'}, inplace=True)
+
+    return df
+
+def add_column_sin_cos(df):
+    # Get the 181st 'state' column ('state_181' which is at index 186 in your list)
+    column_181 = df['state_181']
+
+    # Calculate sine and cosine
+    sin_values = (np.sin(column_181)+1.0)/2.0
+    cos_values = (np.cos(column_181)+1.0)/2.0
+
+    # Add the sin and cos values as new columns, before reordering
+    df['state_181_cos'] = cos_values
+    df['state_181_sin'] = sin_values
+
+    # Create a new column order based on your instructions
+    new_column_order = ['Episode', 'TimeStep', 'Reward', 'Terminated', 'action_1', 'action_2'] + \
+                       [f'state_{i}' for i in range(1, 181)] + \
+                       ['state_181_cos', 'state_181_sin', 'state_182']
+
+    # Ensure all expected columns exist before reordering
+    missing_cols = set(new_column_order) - set(df.columns)
+    if missing_cols:
+        raise KeyError(f"The following columns are missing and cannot be reordered: {missing_cols}")
+
+    # Reorder the dataframe according to the new order
+    df = df[new_column_order]
+
+    # Rename all state columns to follow the pattern state_1 -> state_183
+    for i in range(1, 184):
+        current_col_name = df.columns[6 + i - 1]  # Start at the 7th column (after Episode, TimeStep, etc.)
+        df.rename(columns={current_col_name: f'state_{i}'}, inplace=True)
+
+    return df
+
+def unnormalize_state(state, num_lidar=180):
+    lidar_states = state[:num_lidar]
+    goal_states = state[num_lidar:]
+    cos_state = goal_states[0]
+    sin_state = goal_states[1]
+    distance_state = goal_states[2]
+
+    unnormal_cos = cos_state * 2.0 - 1.0
+    unnormal_sin = sin_state * 2.0 - 1.0
+    unnormal_distance = distance_state * 12.0
+    unnormal_lidar = lidar_states*3.5
+
+    # Convert scalars to arrays
+    unnormal_cos = np.array([unnormal_cos])
+    unnormal_sin = np.array([unnormal_sin])
+    unnormal_distance = np.array([unnormal_distance])
+
+    return_value = np.concatenate([unnormal_lidar, unnormal_cos, unnormal_sin, unnormal_distance])
+
+    return return_value
+
+
+
+
+
 if __name__ == "__main__":
+    import pandas as pd
+    test_df = pd.read_csv('models_and_data/best_val_trained_gazebo/old_data.csv')
+    df = pd.read_csv('models_and_data/icinco_model/data.csv')
+
+    df = add_column_sin_cos(df)
+
+    #df.to_csv('models_and_data/icinco_model/cos_sin_data.csv')
+
+    exit()
+
+
+
+
     # Create a MultiPolygon with 10 obstacles in a polar manner
     obstacles = []
     for _ in range(100):
