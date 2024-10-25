@@ -26,9 +26,9 @@ class LidarCounterfactualsGenetic:
                  origin=None,
                  combination_type='closest',
                  loss_weights=[1.0, 1.0, 1.0, 1.0],
-                 max_tries_per_cf=5,
+                 max_tries_per_cf=50,
                  y_loss_weight_increase_if_fail=1.1,
-                 y_loss_threshold_completion=-1.0,
+                 y_loss_threshold_completion= -0.1,
                  coordinate_type='cartesian',
                  cf_base_combination_type='minimum_distance'):
         # Combination type is closest or generated_obstacle.
@@ -168,7 +168,7 @@ class LidarCounterfactualsGenetic:
     def _combine_base_and_cf_by_cf_prio(self, base_lidar, cf_lidar):
         cf_lidar = np.array(cf_lidar)
 
-        combined_lidar = np.where(cf_lidar < 1.0, cf_lidar, base_lidar).tolist()
+        combined_lidar = np.where(cf_lidar < MAX_DISTANCE, cf_lidar, base_lidar).tolist()
 
         return combined_lidar
 
@@ -181,7 +181,8 @@ class LidarCounterfactualsGenetic:
 
         # Assert that multipolygon does not overlap the center within a certain radius
         if self._overlap_with_center_radius(multipolygon):
-            return -100.0
+            #print("test")
+            return -500.0
 
         # Generate LiDAR data
         lidar_data = utils.calculate_lidar_readings(multipolygon, self.origin)
@@ -216,9 +217,8 @@ class LidarCounterfactualsGenetic:
 
         combined_array = self.cf_combination_func(self.base_state[:LIDAR_DIM], lidar_data)
 
-        # Append the last two elements from arr1
+        # Append the last three elements from arr1
         model_input = np.concatenate((combined_array, self.base_state[LIDAR_DIM:]))
-        # model_input = lidar_data
 
         # Input data into DRL agent
         model_output = self.ml_model(model_input)
@@ -231,21 +231,22 @@ class LidarCounterfactualsGenetic:
         for curr_cf in range(self.num_cfs):
             cf_generation_terminated = False
             best_solution, best_solution_fitness, best_solution_idx = None, -math.inf, None
+            y_loss_best_solution = -math.inf
             attempts = 0
             while not cf_generation_terminated:
                 ga_instance = pygad.GA(
-                    num_generations=100,  # Increase number of generations
+                    num_generations=10,  # Increase number of generations
                     num_parents_mating=10,  # More parents mating
                     fitness_func=self.compute_fitness,  # Fitness function
                     sol_per_pop=100,  # Larger population size
                     num_genes=len(self.gene_space),  # Number of genes
                     gene_space=self.gene_space,  # Gene space
-                    parent_selection_type="rws",  # Tournament selection for better diversity
+                    parent_selection_type="tournament",  # Tournament selection for better diversity
                     keep_parents=10,  # Keep top 10 parents
-                    crossover_type="uniform",  # Uniform crossover for better exploration
+                    crossover_type="single_point",  # Uniform crossover for better exploration
                     mutation_type="random",  # Keep random mutation
                     mutation_percent_genes=20,  # Lower mutation rate to 8%
-                    stop_criteria=["saturate_50"]  # Stop if no improvement in 50 generations
+                    stop_criteria=["saturate_10", "reach_0"]
                 )
 
                 ga_instance.run()
@@ -256,15 +257,18 @@ class LidarCounterfactualsGenetic:
                     best_solution = solution
                     best_solution_fitness = solution_fitness
                     best_solution_idx = solution_idx
+                    y_loss_best_solution = self.calc_y_loss_from_sol(best_solution)
 
-                y_loss_curr_sol = self.calc_y_loss_from_sol(solution)
-
-                if y_loss_curr_sol >= self.y_loss_thresh_completion or attempts > self.max_tries_per_cf:
+                if y_loss_best_solution >= self.y_loss_thresh_completion:
                     cf_generation_terminated = True
-                    print(f"Solution found! y_loss_curr_sol: {y_loss_curr_sol}")
+                    print(f"Solution found! y_loss_best_solution: {y_loss_best_solution}, cf_num {curr_cf + 1}")
+
+                elif attempts > self.max_tries_per_cf:
+                    print(f"Solution not found with {attempts} attempts. y_loss_best_solution: {y_loss_best_solution}")
+                    cf_generation_terminated = True
 
                 else:
-                    print(f"Solution not found, y_loss_curr_sol: {y_loss_curr_sol}")
+                    print(f"Solution not found, y_loss_best_solution: {y_loss_best_solution}")
                     loss_weights[0] *= self.y_loss_wgt_incr_if_fail
                     attempts += 1
 
@@ -289,17 +293,14 @@ if __name__ == "__main__":
 
     LIDAR_DIM = 180
     MAX_DISTANCE = 3.5/3.5
-    MIN_DISTANCE = 0.75/3.5
+    MIN_DISTANCE = 0.5/3.5
 
     coordinate_type = 'cartesian' #polar or cartesian
     num_objects = 3
-    cf_base_combination_type ='cf_priority'
+    cf_base_combination_type ='cf_priority' # cf_priority or minimum_distance
+    num_cfs = 10
 
-    #model = ExampleModel(input_dim=182, output_dim=2)
-    #model = models.get_best_val_model()
-    #val_model_func = lambda input: val_model(torch.Tensor(input)).detach().numpy()
 
-    #model = models.load_model('models_and_data/ecc_gazebo_trained/rl_model_50000_steps.zip')
     model, model_real = models.load_model('models_and_data/ecc_gazebo_trained/ECC_2025_models/ECC_2025_hp_from_gz/20241022_144549/rl_model_900000_steps.zip')
     # 20241022_144549/rl_model_900000_steps.zip
     model_func = lambda input: model(torch.Tensor(input)).detach().numpy()
@@ -318,9 +319,13 @@ if __name__ == "__main__":
     action_columns = df.filter(regex='^action')
     actions = action_columns.values
 
-    data_index = 100
+    data_index = 300
 
     base_state = states[data_index]
+    plain_base_state = np.array([MAX_DISTANCE]*len(states[data_index]))
+    plain_base_state[LIDAR_DIM:] = base_state[LIDAR_DIM:]
+
+    #base_state = plain_base_state
     base_action = actions[data_index]
     #val_test_action = val_model_func(base_state)
     test_action = model_func(base_state)
@@ -333,9 +338,9 @@ if __name__ == "__main__":
     test_output = model_func(random_numbers)
 
     # [[low_1, high_1],[low_2, high_2]]
-    testing_output_bounds = np.array([[-1.0, 1.0], [0.5, 1.0]])
+    testing_output_bounds = np.array([[-1.0, 0.0], [0.5, 1.0]])
     # y_loss, proximity_loss, sparsity_loss, diversity_loss
-    loss_weights = [1.0, 0.1, 1.0, 1.0]
+    loss_weights = [1.0, 0.0, 0.0, 0.0]
     #exit()
 
     """gene_add = np.array([1.0, 0.1, 0.1, -3.5, -3.5, 0.0])
@@ -353,10 +358,10 @@ if __name__ == "__main__":
     if coordinate_type == 'cartesian':
         max_obj_size = 0.3
         min_obj_size = 0.01
-        max_obj_x_pos = 0.2
-        min_obj_x_pos = -0.2
-        max_obj_y_pos = 0.5
-        min_obj_y_pos = -0.0
+        max_obj_x_pos = MAX_DISTANCE
+        min_obj_x_pos = -MAX_DISTANCE
+        max_obj_y_pos = MAX_DISTANCE
+        min_obj_y_pos = -MAX_DISTANCE
         min_angle = 0.0
         max_angle = 2*math.pi
 
@@ -388,48 +393,44 @@ if __name__ == "__main__":
                                                testing_output_bounds,
                                                num_objects,
                                                base_state=base_state,
-                                               num_cfs=1,
+                                               num_cfs=num_cfs,
                                                origin=None,
                                                loss_weights=loss_weights,
                                                coordinate_type=coordinate_type,
                                                cf_base_combination_type=cf_base_combination_type)
 
-    solution, solution_fitness, solution_idx = cf_generator.generate_counterfactuals()
+    solution_list, solution_fitness, solution_idx = cf_generator.generate_counterfactuals()
 
 
-    print("Solution: ", solution)
+    print("Solution: ", solution_list)
     print("Solution fitness: ", solution_fitness)
     print("Solution idx: ", solution_idx)
     print("time to calculate: ", time.time() - start_time)
 
-    decoded_solution = cf_generator._decode_chromosome(solution)
-
-    multipolygon = cf_generator.multipolygon_func(decoded_solution)
-
-    # Assert that multipolygon does not overlap the center within a certain radius
-
-    # Generate LiDAR data
-    lidar_data = utils.calculate_lidar_readings(multipolygon, cf_generator.origin)
-
-    min_arr = cf_generator.cf_combination_func(cf_generator.base_state[:LIDAR_DIM], lidar_data)
-
-    # Append the last two elements from arr1
-    test_data = np.concatenate((min_arr, cf_generator.base_state[LIDAR_DIM:]))
-
-    lidar_plus_state = np.concatenate((lidar_data, cf_generator.base_state[LIDAR_DIM:]))
-    #test_data = lidar_data
-
-    #plot_lidar_readings(lidar_data)
-    output = cf_generator.ml_model(test_data)
-
     model_output = model_func(base_state)
     utils.plot_lidar_state_cos_sin_unnormalize(base_state, title=f"From dataset, action: {base_action}")
     utils.plot_lidar_state_cos_sin_unnormalize(base_state, title=f"From model, action: {model_output}")
-    utils.plot_lidar_state_cos_sin_unnormalize(test_data, title=f"CF, action: {output}, goal: [{testing_output_bounds[0]}, {testing_output_bounds[1]}]")
-    utils.plot_lidar_state_cos_sin_unnormalize(lidar_plus_state, title=f"goal: [{testing_output_bounds[0]}, {testing_output_bounds[1]}]")
 
+    for i in range(len(solution_list)):
+        solution = solution_list[i]
 
-    print("Sol output: ", output)
+        # Generate LiDAR data
+        lidar_data = cf_generator.get_lidar_data_from_sol(solution)
+
+        min_arr = cf_generator.cf_combination_func(cf_generator.base_state[:LIDAR_DIM], lidar_data)
+
+        # Append the last two elements from arr1
+        test_data = np.concatenate((min_arr, cf_generator.base_state[LIDAR_DIM:]))
+
+        lidar_plus_state = np.concatenate((lidar_data, cf_generator.base_state[LIDAR_DIM:]))
+        # test_data = lidar_data
+
+        # plot_lidar_readings(lidar_data)
+
+        output = cf_generator.ml_model(test_data)
+
+        utils.plot_lidar_state_cos_sin_unnormalize(test_data, title=f"CF, action: {output}, goal: [{testing_output_bounds[0]}, {testing_output_bounds[1]}]")
+        utils.plot_lidar_state_cos_sin_unnormalize(lidar_plus_state, title=f"goal: [{testing_output_bounds[0]}, {testing_output_bounds[1]}]")
 
 
 

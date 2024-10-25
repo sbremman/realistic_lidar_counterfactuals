@@ -4,9 +4,6 @@ from shapely.geometry import Point, LineString, MultiPolygon
 from shapely.ops import unary_union
 import torch.nn as nn
 import torch
-from joblib import Parallel, delayed
-from numba import jit
-from rtree import index
 import time
 from shapely.geometry import Point, box
 from shapely.affinity import rotate, translate
@@ -187,6 +184,20 @@ def gene_to_shape(gene):
         gene[5] = 0.0  # angle ignored for circle
     return gene_to_rectangle(gene) if shape_type == 1 else gene_to_circle(gene)
 
+def gene_to_shape_polar(gene):
+    """
+    Converts a gene to the corresponding Shapely shape.
+    """
+    shape_type = 1 if gene[0] < 1.5 else 2
+    gene[0] = shape_type
+    if shape_type == 1:
+        gene[2] = gene[2]  # half_y for rectangle
+        gene[5] = gene[5]  # angle
+    else:
+        gene[2] = 0.0  # half_y ignored for circle
+        gene[5] = 0.0  # angle ignored for circle
+    return gene_to_rectangle(gene) if shape_type == 1 else gene_to_circle(gene)
+
 
 def genes_to_multipolygon(genes):
     shape_list = []
@@ -206,6 +217,14 @@ def genes_to_multipolygon_polar(genes):
     # Loop through genes, ensuring we take gene_length chunks
     for i in range(0, len(genes), GENE_LENGTH):
         gene = genes[i:i + GENE_LENGTH]  # Segment the gene list
+        gene_obj_polar_angle = gene[3]
+        gene_obj_polar_radius = gene[4]
+
+        x_pos = gene_obj_polar_radius * np.cos(gene_obj_polar_angle)
+        y_pos = gene_obj_polar_radius * np.sin(gene_obj_polar_angle)
+        gene[3] = x_pos
+        gene[4] = y_pos
+
         if len(gene) == GENE_LENGTH:  # Ensure it's a full gene
             gene_shape = gene_to_shape(gene)
             shape_list.append(gene_shape)
