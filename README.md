@@ -15,7 +15,6 @@ realistic_lidar_counterfactuals/
 ├── examples/                 # Example scripts to demonstrate usage
 ├── models/                   # Pre-trained models or saved checkpoints
 ├── realistic_lidar_counterfactuals/ # Main package code
-├── tests/                    # Unit tests for your package
 ├── setup.py                  # For installation as a package
 ├── README.md                 # Project description, setup, and usage instructions
 ├── LICENSE                   # License information for your project
@@ -47,16 +46,10 @@ pip install torch stable-baselines3
 After installation, you can start by running the example scripts to understand how the counterfactuals are generated.
 
 ```sh
-python examples/generate_counterfactual.py
+python examples/basic_usage.py
 ```
 
 Refer to the `examples/` directory for guidance on using the package. Currently, there is one example script provided to demonstrate the usage. Please note that this is a demonstration project, and the methods may require further adaptation for specific use cases.
-
-## Running Tests
-To run the unit tests, use the following command:
-```sh
-pytest tests/
-```
 
 ## Contributing
 Contributions are welcome! If you have suggestions for improvements, please feel free to fork the repository, make changes, and submit a pull request.
