@@ -1,11 +1,11 @@
 # Realistic LiDAR Counterfactuals
 
-This repository provides an implementation of generating realistic counterfactual explanations for Deep Reinforcement Learning (DRL) agents that control mobile robots using raw LiDAR data as input. The project demonstrates methods to alter LiDAR data input in a realistic way to produce specific changes in the robot's actions, providing interpretable insights into the decision-making process.
+This repository provides an example implementation of generating realistic counterfactual explanations for Deep Reinforcement Learning (DRL) agents that control mobile robots using raw LiDAR data as input. The project explores methods to alter LiDAR data input in a realistic way to produce specific changes in the robot's actions, aiming to provide interpretable insights into the decision-making process.
 
 ## Features
-- **Counterfactual Generation**: Methods to generate realistic LiDAR-based counterfactuals.
-- **Deep Reinforcement Learning Integration**: Tools to interface with DRL agents, evaluate counterfactuals, and visualize agent responses.
-- **Example Use Cases**: Scripts to showcase the application of counterfactual generation in real-world scenarios.
+- **Counterfactual Generation**: Tools to explore generating realistic LiDAR-based counterfactuals.
+- **Deep Reinforcement Learning Integration**: Scripts to interface with DRL agents, evaluate counterfactuals, and visualize agent responses.
+- **Example Use Case**: A script to showcase the potential application of counterfactual generation.
 
 ## Repository Structure
 ```
@@ -32,10 +32,16 @@ realistic_lidar_counterfactuals/
    ```sh
    cd realistic_lidar_counterfactuals
    ```
-3. Install the required dependencies:
+3. Install the core package dependencies:
    ```sh
-   pip install -r requirements.txt
+   pip install .
    ```
+
+### Optional Dependencies
+To run the example scripts, you'll also need additional dependencies:
+```sh
+pip install torch stable-baselines3
+```
 
 ## Usage
 After installation, you can start by running the example scripts to understand how the counterfactuals are generated.
@@ -44,7 +50,7 @@ After installation, you can start by running the example scripts to understand h
 python examples/generate_counterfactual.py
 ```
 
-Refer to the `examples/` directory for more detailed examples and guidance on using the package.
+Refer to the `examples/` directory for guidance on using the package. Currently, there is one example script provided to demonstrate the usage. Please note that this is a demonstration project, and the methods may require further adaptation for specific use cases.
 
 ## Running Tests
 To run the unit tests, use the following command:
@@ -60,4 +66,3 @@ This project is licensed under the terms of the MIT license. See the **LICENSE**
 
 ## Contact
 If you have any questions, feel free to open an issue on the repository or contact Sindre Benjamin Remman.
-

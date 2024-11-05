@@ -1,0 +1,14 @@
+# Requirements for Realistic LiDAR Counterfactuals
+
+# Core dependencies
+numpy
+pandas
+scipy
+matplotlib
+shapely
+gymnasium
+pygad
+
+# Optional dependencies for examples
+torch
+stable-baselines3
