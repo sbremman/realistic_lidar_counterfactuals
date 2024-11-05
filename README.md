@@ -1,6 +1,6 @@
 # Realistic LiDAR Counterfactuals
 
-This repository provides an example implementation of generating realistic counterfactual explanations for Deep Reinforcement Learning (DRL) agents that control mobile robots using raw LiDAR data as input. The project explores methods to alter LiDAR data input in a realistic way to produce specific changes in the robot's actions, aiming to provide interpretable insights into the decision-making process.
+This repository provides an implementation of generating realistic counterfactual explanations for Machine Learning (ML) agents that control mobile robots using raw 2D LiDAR data as input. The project explores methods to alter LiDAR data input in a realistic way to produce specific changes in the robot's actions, aiming to provide interpretable insights into the decision-making process.
 
 ## Features
 - **Counterfactual Generation**: Tools to explore generating realistic LiDAR-based counterfactuals.
