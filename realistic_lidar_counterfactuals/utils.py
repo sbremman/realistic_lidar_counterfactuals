@@ -264,71 +264,6 @@ def plot_shapes(shapes):
     ax.grid(True)
     plt.show()
 
-
-def add_column_sin_cos(df):
-    # Get the 181st 'state' column ('state_181' which is at index 186 in your list)
-    column_181 = df['state_181']
-
-    # Calculate sine and cosine
-    sin_values = (np.sin(column_181)+1.0)/2.0
-    cos_values = (np.cos(column_181)+1.0)/2.0
-
-    # Add the sin and cos values as new columns, before reordering
-    df['state_181_cos'] = cos_values
-    df['state_181_sin'] = sin_values
-
-    # Create a new column order based on your instructions
-    new_column_order = ['Episode', 'TimeStep', 'Reward', 'Terminated', 'action_1', 'action_2'] + \
-                       [f'state_{i}' for i in range(1, 181)] + \
-                       ['state_181_cos', 'state_181_sin', 'state_182']
-
-    # Ensure all expected columns exist before reordering
-    missing_cols = set(new_column_order) - set(df.columns)
-    if missing_cols:
-        raise KeyError(f"The following columns are missing and cannot be reordered: {missing_cols}")
-
-    # Reorder the dataframe according to the new order
-    df = df[new_column_order]
-
-    # Rename all state columns to follow the pattern state_1 -> state_183
-    for i in range(1, 184):
-        current_col_name = df.columns[6 + i - 1]  # Start at the 7th column (after Episode, TimeStep, etc.)
-        df.rename(columns={current_col_name: f'state_{i}'}, inplace=True)
-
-    return df
-
-def add_column_sin_cos(df):
-    # Get the 181st 'state' column ('state_181' which is at index 186 in your list)
-    column_181 = df['state_181']
-
-    # Calculate sine and cosine
-    sin_values = (np.sin(column_181)+1.0)/2.0
-    cos_values = (np.cos(column_181)+1.0)/2.0
-
-    # Add the sin and cos values as new columns, before reordering
-    df['state_181_cos'] = cos_values
-    df['state_181_sin'] = sin_values
-
-    # Create a new column order based on your instructions
-    new_column_order = ['Episode', 'TimeStep', 'Reward', 'Terminated', 'action_1', 'action_2'] + \
-                       [f'state_{i}' for i in range(1, 181)] + \
-                       ['state_181_cos', 'state_181_sin', 'state_182']
-
-    # Ensure all expected columns exist before reordering
-    missing_cols = set(new_column_order) - set(df.columns)
-    if missing_cols:
-        raise KeyError(f"The following columns are missing and cannot be reordered: {missing_cols}")
-
-    # Reorder the dataframe according to the new order
-    df = df[new_column_order]
-
-    # Rename all state columns to follow the pattern state_1 -> state_183
-    for i in range(1, 184):
-        current_col_name = df.columns[6 + i - 1]  # Start at the 7th column (after Episode, TimeStep, etc.)
-        df.rename(columns={current_col_name: f'state_{i}'}, inplace=True)
-
-    return df
-
 def unnormalize_state(state, num_lidar=180):
     lidar_states = state[:num_lidar]
     goal_states = state[num_lidar:]
@@ -389,15 +324,7 @@ def create_rectangle(center_x, center_y, half_width, half_height, angle=0.0):
 
 
 if __name__ == "__main__":
-    """import pandas as pd
-    test_df = pd.read_csv('models/best_val_trained_gazebo/old_data.csv')
-    df = pd.read_csv('models/icinco_model/data.csv')
 
-    df = add_column_sin_cos(df)
-
-    #df.to_csv('models/icinco_model/cos_sin_data.csv')
-
-    exit()"""
     from shapely.geometry import Polygon
 
 
