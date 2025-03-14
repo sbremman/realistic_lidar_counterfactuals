@@ -58,4 +58,4 @@ Contributions are welcome! If you have suggestions for improvements, please feel
 This project is licensed under the terms of the MIT license. See the **LICENSE** file for details.
 
 ## Contact
-If you have any questions, feel free to open an issue on the repository or contact Sindre Benjamin Remman.
+If you have any questions, feel free to open an issue on the repository.
