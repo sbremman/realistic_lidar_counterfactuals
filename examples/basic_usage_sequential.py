@@ -4,15 +4,18 @@ import torch
 import time
 import math
 from realistic_lidar_counterfactuals import models, utils
-from realistic_lidar_counterfactuals.lidar_counterfactuals_genetic import LidarCounterfactualsGenetic
+from realistic_lidar_counterfactuals.sequential_lidar_counterfactuals_genetic import SequentialLidarCounterfactualsGenetic
 import os
+
+def combine_base_and_cf_by_minimum(base_lidar, cf_lidar):
+    return np.minimum(base_lidar, cf_lidar)
 
 # Constants and Parameters
 SEED = 42  # Random seed for reproducibility
 COORDINATE_TYPE = 'cartesian'  # Options: 'polar' or 'cartesian'
 NUM_OBJECTS = 3  # Number of objects to generate in counterfactuals
-CF_BASE_COMBINATION_TYPE = 'minimum_distance'  # Combination method for counterfactual base
-NUM_CFS = 10  # Number of counterfactuals to generate
+# CF_BASE_COMBINATION_TYPE = 'minimum_distance'  # Combination method for counterfactual base
+NUM_CFS = 1  # Number of counterfactuals to generate
 LIDAR_DIM = 180  # Number of LiDAR readings
 LOSS_WEIGHTS = [1.0, 0.0, 0.0, 0.0]  # Loss weights for genetic algorithm
 OUTPUT_BOUNDS = np.array([[0.0, 1.0], [0.5, 1.0]])  # Bounds for counterfactual output values
@@ -97,10 +100,31 @@ else:
 
 gene_multiply = gene_max_values - gene_add
 
+"""def __init__(self,
+                 ml_model,
+                 desired_objective,
+                 objective_type,
+                 num_objects,
+                 gene_space,
+                 gene_add,
+                 gene_multiply,
+                 base_state=None,
+                 num_cfs=1,
+                 origin=None,
+                 combination_type='closest',
+                 loss_weights=[1.0, 1.0, 1.0, 1.0],
+                 max_tries_per_cf=50,
+                 y_loss_weight_increase_if_fail=1.1,
+                 y_loss_threshold_completion=-0.1,
+                 coordinate_type='cartesian',
+                 cf_base_combination_type='minimum_distance',
+                 num_sim_timesteps=1):"""
+
 # Initialize the counterfactual generator
-cf_generator = LidarCounterfactualsGenetic(
+cf_generator = SequentialLidarCounterfactualsGenetic(
     ml_model=model_func,  # Model function for prediction
-    output_bounds=OUTPUT_BOUNDS,
+    desired_objective=np.array([0.0, 2.0]),
+    objective_type="end_position",
     num_objects=NUM_OBJECTS,
     gene_space=gene_space,
     gene_add=gene_add,
@@ -109,7 +133,7 @@ cf_generator = LidarCounterfactualsGenetic(
     num_cfs=NUM_CFS,
     loss_weights=LOSS_WEIGHTS,
     coordinate_type=COORDINATE_TYPE,
-    cf_base_combination_type=CF_BASE_COMBINATION_TYPE
+    num_sim_timesteps=50
 )
 
 # Generate counterfactuals using the genetic algorithm
@@ -127,6 +151,6 @@ utils.plot_lidar_state_cos_sin_unnormalize(base_state, title=f"Model action: {mo
 # Plot generated counterfactuals and their corresponding outputs
 for i, solution in enumerate(solution_list):
     lidar_data = cf_generator.get_lidar_data_from_sol(solution)
-    test_data = np.concatenate((cf_generator.cf_combination_func(base_state[:LIDAR_DIM], lidar_data), base_state[LIDAR_DIM:]))
+    test_data = np.concatenate((combine_base_and_cf_by_minimum(base_state[:LIDAR_DIM], lidar_data), base_state[LIDAR_DIM:]))
     output = model_func(test_data)
     utils.plot_lidar_state_cos_sin_unnormalize(test_data, title=f"Counterfactual {i+1}, action: {output}")
