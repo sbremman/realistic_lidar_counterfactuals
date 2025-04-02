@@ -10,6 +10,92 @@ import os
 def combine_base_and_cf_by_minimum(base_lidar, cf_lidar):
     return np.minimum(base_lidar, cf_lidar)
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_info_data(info_list):
+    # Extract values
+    x = np.array([d['x_pos'] for d in info_list])
+    y = np.array([d['y_pos'] for d in info_list])
+    x_vel = np.array([d['x_vel'] for d in info_list])
+    y_vel = np.array([d['y_vel'] for d in info_list])
+    angle = np.array([d['angle'] for d in info_list])
+    angular_vel = np.array([d['angular_vel'] for d in info_list])
+    success = np.array([d['is_success'] for d in info_list])
+    failure = np.array([d['is_failure'] for d in info_list])
+    t = np.arange(len(info_list))
+    speed = np.sqrt(x_vel**2 + y_vel**2)
+
+    # 1. XY Position
+    plt.figure()
+    plt.plot(x, y, marker='o')
+    plt.title('X-Y Position (Trajectory)')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.axis('equal')
+    plt.grid(True)
+
+    # 2. X velocity
+    plt.figure()
+    plt.plot(t, x_vel)
+    plt.title('X Velocity Over Time')
+    plt.xlabel('Timestep')
+    plt.ylabel('x_vel')
+    plt.grid(True)
+
+    # 3. Y velocity
+    plt.figure()
+    plt.plot(t, y_vel)
+    plt.title('Y Velocity Over Time')
+    plt.xlabel('Timestep')
+    plt.ylabel('y_vel')
+    plt.grid(True)
+
+    # 4. Angle
+    plt.figure()
+    plt.plot(t, angle)
+    plt.title('Angle Over Time')
+    plt.xlabel('Timestep')
+    plt.ylabel('Angle (rad)')
+    plt.grid(True)
+
+    # 5. Angular velocity
+    plt.figure()
+    plt.plot(t, angular_vel)
+    plt.title('Angular Velocity Over Time')
+    plt.xlabel('Timestep')
+    plt.ylabel('Angular Velocity')
+    plt.grid(True)
+
+    # 6. Success/Failure
+    plt.figure()
+    plt.plot(t, success, 'go', label='Success')
+    plt.plot(t, failure, 'rx', label='Failure')
+    plt.title('Success and Failure Flags')
+    plt.xlabel('Timestep')
+    plt.yticks([0, 1], ['False', 'True'])
+    plt.legend()
+    plt.grid(True)
+
+    # 7. Speed
+    plt.figure()
+    plt.plot(t, speed)
+    plt.title('Speed Magnitude Over Time')
+    plt.xlabel('Timestep')
+    plt.ylabel('Speed')
+    plt.grid(True)
+
+    # 8. Absolute Angular Velocity
+    plt.figure()
+    plt.plot(t, np.abs(angular_vel))
+    plt.title('Absolute Angular Velocity Over Time')
+    plt.xlabel('Timestep')
+    plt.ylabel('|Angular Velocity|')
+    plt.grid(True)
+
+    plt.show()
+
+
 # Constants and Parameters
 SEED = 42  # Random seed for reproducibility
 COORDINATE_TYPE = 'cartesian'  # Options: 'polar' or 'cartesian'
@@ -38,7 +124,7 @@ MAX_ANGLE_POLAR = 2 * math.pi
 # Paths for loading model and data
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # Project root directory
 MODEL_PATH = os.path.join(BASE_DIR, 'models', 'drl_sac_model_sb3.zip')
-DATA_PATH = os.path.join(BASE_DIR, 'data', 'real_world_data_small_obstacle.csv')
+#DATA_PATH = os.path.join(BASE_DIR, 'data', 'real_world_data_small_obstacle.csv')
 
 # Set seeds for reproducibility
 np.random.seed(SEED)
@@ -49,13 +135,13 @@ model, model_real = models.load_model(MODEL_PATH)
 model_func = lambda input: model(torch.Tensor(input)).detach().numpy()
 
 # Load and prepare data from CSV file
-df = pd.read_csv(DATA_PATH)
-states = df.filter(regex='^state').values
-actions = df.filter(regex='^action').values
-data_index = 0
+#df = pd.read_csv(DATA_PATH)
+#states = df.filter(regex='^state').values
+#actions = df.filter(regex='^action').values
+#data_index = 0
 
-base_state = states[data_index]  # Select a base state from dataset
-base_action = actions[data_index]  # Corresponding action
+#base_state = states[data_index]  # Select a base state from dataset
+#base_action = actions[data_index]  # Corresponding action
 
 # Define genetic algorithm parameters based on the coordinate type
 gene_space = [{'low': 0, 'high': 1} for _ in range(6)]
@@ -123,18 +209,19 @@ gene_multiply = gene_max_values - gene_add
 # Initialize the counterfactual generator
 cf_generator = SequentialLidarCounterfactualsGenetic(
     ml_model=model_func,  # Model function for prediction
-    desired_objective=np.array([0.0, 2.0]),
-    objective_type="end_position",
+    desired_objective=np.array([1.0, 0.0]),
+    objective_type="any_position",
     num_objects=NUM_OBJECTS,
     gene_space=gene_space,
     gene_add=gene_add,
     gene_multiply=gene_multiply,
-    base_state=base_state,
     num_cfs=NUM_CFS,
     loss_weights=LOSS_WEIGHTS,
     coordinate_type=COORDINATE_TYPE,
     num_sim_timesteps=50
 )
+
+base_state = cf_generator.get_base_state()
 
 # Generate counterfactuals using the genetic algorithm
 start_time = time.time()
@@ -154,3 +241,8 @@ for i, solution in enumerate(solution_list):
     test_data = np.concatenate((combine_base_and_cf_by_minimum(base_state[:LIDAR_DIM], lidar_data), base_state[LIDAR_DIM:]))
     output = model_func(test_data)
     utils.plot_lidar_state_cos_sin_unnormalize(test_data, title=f"Counterfactual {i+1}, action: {output}")
+
+    info_dict = cf_generator.sol_info_data_dict[str(solution)]
+
+
+    plot_info_data(info_dict)

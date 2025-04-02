@@ -5,6 +5,7 @@ import pybullet_data
 import numpy as np
 import os
 import time
+from tqdm import tqdm
 
 wheel_distance = 0.287
 wheel_radius = 0.034
@@ -13,7 +14,15 @@ abs_max_env_size = 12.0
 goal_threshold = 0.2 / abs_max_env_size
 
 
-
+def get_robot_id_by_name(name: str):
+    #print(f"p.getNumBodies: {p.getNumBodies()}")
+    for i in range(p.getNumBodies()):
+        body_id = i
+        body_name = p.getBodyInfo(body_id)[1].decode("utf-8")
+        print(body_name)
+        if body_name == name:
+            return body_id
+    raise ValueError(f"Body not found named {name} not found")
 
 def compute_wheel_velocities(lin_vel, ang_vel):
     # Function to convert Twist-like command to wheel velocities
@@ -71,7 +80,7 @@ class Turtlebot3Simulation:
         self.timeStep = timeStep
         self.policy = policy if policy is not None else DummyDRLPolicy()
         self.start_pos = start_pos if start_pos is not None else [0, 0, 0.05]
-        self.target_pos = target_position if target_position is not None else [1, 0]
+        self.target_pos = target_position if target_position is not None else [2, 0]
         self.start_orientation_euler = start_orientation_euler if start_orientation_euler is not None else [0, 0, 0]
         self.start_orientation = p.getQuaternionFromEuler(self.start_orientation_euler)
 
@@ -80,7 +89,7 @@ class Turtlebot3Simulation:
         # Initialize the simulation environment.
         self._init_simulation()
 
-    def _init_simulation(self):
+    def _init_simulation_old(self):
         p.resetSimulation()
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(self.timeStep)
@@ -88,18 +97,55 @@ class Turtlebot3Simulation:
         self.plane = p.loadURDF("plane.urdf")
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.turtlebot3_id = p.loadURDF(
-            self.script_dir + "/../../pybullet_turtlebot3_env/turtlebot3_description/urdf/turtlebot3_waffle_pi.urdf",
+            self.script_dir + "/../turtlebot3_description/turtlebot3_waffle_pi.urdf",
             self.start_pos,
             self.start_orientation
         )
 
-        for _ in range(50):
+        for _ in range(500):
+            p.stepSimulation()
+
+        self._saved_state_id = p.saveState()
+        self.objects = []
+
+    def _init_simulation(self):
+        p.resetSimulation()
+        p.setGravity(0, 0, -9.81)
+        p.setTimeStep(self.timeStep)
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        p.loadBullet(self.script_dir+"/obs_ahead.bullet")
+
+        self.turtlebot3_id = p.loadURDF(
+            self.script_dir + "/../turtlebot3_description/turtlebot3_waffle_pi.urdf",
+            self.start_pos,
+            self.start_orientation
+        )
+
+        for _ in range(500):
             p.stepSimulation()
 
         self._saved_state_id = p.saveState()
         self.objects = []
 
     def reset_environment(self):
+        """
+        Resets simulation to clean initial state (plane + robot) and removes all added obstacles.
+        """
+        # Remove any previously added obstacles
+        for obj_id in self.objects:
+            p.removeBody(obj_id)
+        self.objects = []
+
+        # Restore fast initial state
+        if self._saved_state_id is not None:
+            #print("Restore")
+            p.restoreState(self._saved_state_id)
+            #p.resetBasePositionAndOrientation(self.turtlebot3_id, self.start_pos, self.start_orientation)
+            #p.resetBaseVelocity(self.turtlebot3_id, [0, 0, 0], [0, 0, 0])
+        else:
+            self._init_simulation()
+
+    def reset_environment_old(self):
         """
         Resets simulation to clean initial state (plane + robot) and removes all added obstacles.
         """
@@ -357,7 +403,79 @@ if __name__ == "__main__":
 
     # External routines can now repeatedly call add_objects, run_simulation, and reset_environment as needed.
 
-    reset_time = 0.0
+    """sim.reset_environment()
+
+    obstacles = [
+        {"shape": "cuboid", "position": [1.0, 0.0, 0.25],
+         "orientation": [0, 0, 0],
+         "half_extents": [0.05, 0.5, 0.5]}
+    ]
+    start_time = time.time()
+    sim.add_objects(obstacles)
+
+    #sim.run_simulation(500)
+
+    for i in range(1000):
+        p.stepSimulation()
+
+    p.removeBody(sim.turtlebot3_id)
+
+    p.saveBullet("obs_ahead.bullet")
+    exit()
+
+    sim.run_simulation(50)
+
+    time.sleep(1)"""
+
+    #trajectory = sim.run_simulation(500)
+
+    load_bullet_time = 0.0
+
+    for i in tqdm(range(100)):
+        start_time = time.time()
+        sim.reset_environment()
+        #test = p.loadBullet("obs_ahead.bullet")
+        #test = p.restoreState(fileName='obs_ahead.bullet')
+        #get_robot_id_by_name("turtlebot3_waffle_pi")
+
+
+        obstacles = [
+            {"shape": "circle", "position": [random.uniform(-10.0, 10.0), random.uniform(-1.0, 1.0), 0.25],
+             "orientation": [0, 0, 0],
+             "radius": random.uniform(0.5, 1.0), "height": 0.5},
+            {"shape": "cuboid", "position": [random.uniform(-10.0, 10.0), random.uniform(-1.0, 1.0), 0.25],
+             "orientation": [0, 0, 0],
+             "half_extents": [random.uniform(0.5, 1.0), random.uniform(0.5, 1.0), 0.5]}
+        ]
+        sim.add_objects(obstacles)
+
+        trajectory = sim.run_simulation(50)
+        load_bullet_time += time.time() - start_time
+
+    load_reset_time = 0.0
+
+    """for i in tqdm(range(100)):
+        start_time = time.time()
+        sim.reset_environment()
+        load_reset_time += time.time() - start_time
+
+        obstacles = [
+            {"shape": "circle", "position": [random.uniform(-10.0, 10.0), random.uniform(-1.0, 1.0), 0.25],
+             "orientation": [0, 0, 0],
+             "radius": random.uniform(0.5, 1.0), "height": 0.5},
+            {"shape": "cuboid", "position": [random.uniform(-10.0, 10.0), random.uniform(-1.0, 1.0), 0.25],
+             "orientation": [0, 0, 0],
+             "half_extents": [random.uniform(0.5, 1.0), random.uniform(0.5, 1.0), 0.5]}
+        ]
+        sim.add_objects(obstacles)
+        trajectory = sim.run_simulation(50)"""
+
+
+    print(f"load_bullet_time: {load_bullet_time}")
+    print(f"load_reset_time: {load_reset_time}")
+
+
+    """reset_time = 0.0
     add_object_time = 0.0
     run_sim_time = 0.0
 
@@ -379,10 +497,6 @@ if __name__ == "__main__":
 
         start_time = time.time()
         trajectory = sim.run_simulation(50)
-        run_sim_time += time.time() - start_time
+        run_sim_time += time.time() - start_time"""
 
     p.disconnect()
-
-    print(f"reset time: {reset_time}")
-    print(f"add_object_time: {add_object_time}")
-    print(f"run_sim_time: {run_sim_time}")

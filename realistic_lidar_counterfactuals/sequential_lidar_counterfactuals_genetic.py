@@ -62,7 +62,7 @@ class SequentialLidarCounterfactualsGenetic:
         """
         # Initial configurations
         self.origin = origin or [0.0, 0.0]
-        self.base_state = base_state if base_state is not None else self._create_default_base_state()
+        #self.base_state = base_state if base_state is not None else self._create_default_base_state()
 
         # Type validations
         if not isinstance(num_objects, int):
@@ -76,6 +76,14 @@ class SequentialLidarCounterfactualsGenetic:
                 raise ValueError(f"for obj_type: {objective_type}, desired_objective should have shape (2,).")
 
             self.cost_func = self.c_func_end_pos
+
+        elif objective_type == 'any_position':
+            if not isinstance(desired_objective, np.ndarray):
+                raise TypeError(f"for obj_type: {objective_type}, desired_objective should be an array.")
+            if not desired_objective.shape == (2,):
+                raise ValueError(f"for obj_type: {objective_type}, desired_objective should have shape (2,).")
+
+            self.cost_func = self.c_func_any_pos
 
         else:
             raise NotImplementedError(f"Objective type {objective_type} is not implemented.")
@@ -105,6 +113,8 @@ class SequentialLidarCounterfactualsGenetic:
 
 
         self.sol_lidar_data_dict = {}
+        self.sol_action_data_dict = {}
+        self.sol_info_data_dict = {}
 
         # Assign multipolygon_func based on coordinate_type
         if coordinate_type == 'cartesian':
@@ -123,6 +133,8 @@ class SequentialLidarCounterfactualsGenetic:
         ml_model_func = lambda observation: ml_model(observation)
 
         self.sim = Turtlebot3Simulation(policy=ml_model_func)
+
+        self.base_state = self.sim._get_observation()
         self.num_sim_timesteps = num_sim_timesteps
 
     def _create_default_base_state(self):
@@ -132,6 +144,9 @@ class SequentialLidarCounterfactualsGenetic:
         return np.array(lidar_base_state + goal_angle_base_state + goal_dist_base_state)"""
 
         raise NotImplementedError
+
+    def get_base_state(self):
+        return self.base_state
 
     def _validate_coordinate_type(self, coordinate_type):
         if coordinate_type == 'cartesian':
@@ -190,9 +205,11 @@ class SequentialLidarCounterfactualsGenetic:
             y_loss_best_solution = -math.inf
             attempts = 0
             best_obs_list = None
+            best_action_list = None
+            best_info_list = None
 
             while not cf_generation_terminated:
-                num_generations = 100
+                num_generations = 10
                 pbar = tqdm(total=num_generations, desc=f"CF {curr_cf + 1} GA Progress")
 
                 def on_gen_callback(ga_instance):
@@ -250,6 +267,8 @@ class SequentialLidarCounterfactualsGenetic:
 
             str_best_sol = str(best_solution)
             self.sol_lidar_data_dict[str_best_sol] = sol_lidar_data
+            self.sol_action_data_dict[str_best_sol] = best_action_list
+            self.sol_info_data_dict[str_best_sol] = best_info_list
 
         return solutions, solution_fitnesses, solution_indices
 
@@ -266,6 +285,16 @@ class SequentialLidarCounterfactualsGenetic:
         final_pos = np.array([info_list[-1]['x_pos'], info_list[-1]['y_pos']])
 
         loss = -np.linalg.norm(goal_pos - final_pos)
+
+        return loss
+
+    def c_func_any_pos(self, obs_list, info_list, action_list):
+
+        goal_pos = self.desired_objective
+
+        all_pos = np.array([[info['x_pos'], info['y_pos']] for info in info_list])
+
+        loss = -np.min(np.linalg.norm(all_pos - goal_pos, axis=1))
 
         return loss
 
